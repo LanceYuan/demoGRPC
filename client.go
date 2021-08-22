@@ -50,9 +50,11 @@ func main() {
 	i := 0
 	for {
 		i++
-		stream.Send(&pb.HelloRequest{
+		if err := stream.Send(&pb.HelloRequest{
 			Name: name,
-		})
+		}); err != nil {
+			log.Println(err)
+		}
 		time.Sleep(time.Second)
 		if i > 10 {
 			break
