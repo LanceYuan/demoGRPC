@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -15,6 +17,9 @@ const (
 	defaultName = "world"
 )
 
+func init() {
+	log.SetFlags(log.LstdFlags)
+}
 func main() {
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
@@ -36,4 +41,39 @@ func main() {
 		log.Fatalf("could not greet: %v", err)
 	}
 	log.Printf("Greeting: %s", r.GetMessage())
+
+	// 客户端流式发送.
+	stream, err := c.StreamSayHello(context.Background())
+	if err != nil {
+		log.Println(err)
+	}
+	i := 0
+	for {
+		i++
+		stream.Send(&pb.HelloRequest{
+			Name: name,
+		})
+		time.Sleep(time.Second)
+		if i > 10 {
+			break
+		}
+	}
+	// 服务端流式发送.
+	sendStream, err := c.StreamServer(context.Background(), &pb.HelloRequest{
+		Name: name,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+	for {
+		res, err := sendStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Println(err)
+			break
+		}
+		fmt.Println("receive from server message: " + res.Message)
+	}
 }

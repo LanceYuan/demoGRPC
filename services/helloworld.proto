@@ -3,16 +3,20 @@ package services;
 option go_package = "github.com/LanceYuan/demoGRPC/services";
 
 service Greeter {
-  // Sends a greeting
-  rpc SayHello (HelloRequest) returns (HelloReply) {}
+    // Sends a greeting
+    rpc SayHello (HelloRequest) returns (HelloReply) {}
+    // 客户端流式发送.
+    rpc StreamSayHello(stream HelloRequest) returns(HelloReply) {}
+    // 服务端流式发送
+    rpc StreamServer(HelloRequest)returns(stream HelloReply) {}
 }
 
 // The request message containing the user's name.
 message HelloRequest {
-  string name = 1;
+    string name = 1;
 }
 
 // The response message containing the greetings
 message HelloReply {
-  string message = 1;
+    string message = 1;
 }

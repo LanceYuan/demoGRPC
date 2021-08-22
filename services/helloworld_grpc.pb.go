@@ -20,6 +20,10 @@ const _ = grpc.SupportPackageIsVersion7
 type GreeterClient interface {
 	// Sends a greeting
 	SayHello(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (*HelloReply, error)
+	// 客户端流式发送.
+	StreamSayHello(ctx context.Context, opts ...grpc.CallOption) (Greeter_StreamSayHelloClient, error)
+	// 服务端流式发送
+	StreamServer(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (Greeter_StreamServerClient, error)
 }
 
 type greeterClient struct {
@@ -39,12 +43,82 @@ func (c *greeterClient) SayHello(ctx context.Context, in *HelloRequest, opts ...
 	return out, nil
 }
 
+func (c *greeterClient) StreamSayHello(ctx context.Context, opts ...grpc.CallOption) (Greeter_StreamSayHelloClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Greeter_ServiceDesc.Streams[0], "/services.Greeter/StreamSayHello", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &greeterStreamSayHelloClient{stream}
+	return x, nil
+}
+
+type Greeter_StreamSayHelloClient interface {
+	Send(*HelloRequest) error
+	CloseAndRecv() (*HelloReply, error)
+	grpc.ClientStream
+}
+
+type greeterStreamSayHelloClient struct {
+	grpc.ClientStream
+}
+
+func (x *greeterStreamSayHelloClient) Send(m *HelloRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *greeterStreamSayHelloClient) CloseAndRecv() (*HelloReply, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(HelloReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *greeterClient) StreamServer(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (Greeter_StreamServerClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Greeter_ServiceDesc.Streams[1], "/services.Greeter/StreamServer", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &greeterStreamServerClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Greeter_StreamServerClient interface {
+	Recv() (*HelloReply, error)
+	grpc.ClientStream
+}
+
+type greeterStreamServerClient struct {
+	grpc.ClientStream
+}
+
+func (x *greeterStreamServerClient) Recv() (*HelloReply, error) {
+	m := new(HelloReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GreeterServer is the server API for Greeter service.
 // All implementations must embed UnimplementedGreeterServer
 // for forward compatibility
 type GreeterServer interface {
 	// Sends a greeting
 	SayHello(context.Context, *HelloRequest) (*HelloReply, error)
+	// 客户端流式发送.
+	StreamSayHello(Greeter_StreamSayHelloServer) error
+	// 服务端流式发送
+	StreamServer(*HelloRequest, Greeter_StreamServerServer) error
 	mustEmbedUnimplementedGreeterServer()
 }
 
@@ -54,6 +128,12 @@ type UnimplementedGreeterServer struct {
 
 func (UnimplementedGreeterServer) SayHello(context.Context, *HelloRequest) (*HelloReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SayHello not implemented")
+}
+func (UnimplementedGreeterServer) StreamSayHello(Greeter_StreamSayHelloServer) error {
+	return status.Errorf(codes.Unimplemented, "method StreamSayHello not implemented")
+}
+func (UnimplementedGreeterServer) StreamServer(*HelloRequest, Greeter_StreamServerServer) error {
+	return status.Errorf(codes.Unimplemented, "method StreamServer not implemented")
 }
 func (UnimplementedGreeterServer) mustEmbedUnimplementedGreeterServer() {}
 
@@ -86,6 +166,53 @@ func _Greeter_SayHello_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Greeter_StreamSayHello_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GreeterServer).StreamSayHello(&greeterStreamSayHelloServer{stream})
+}
+
+type Greeter_StreamSayHelloServer interface {
+	SendAndClose(*HelloReply) error
+	Recv() (*HelloRequest, error)
+	grpc.ServerStream
+}
+
+type greeterStreamSayHelloServer struct {
+	grpc.ServerStream
+}
+
+func (x *greeterStreamSayHelloServer) SendAndClose(m *HelloReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *greeterStreamSayHelloServer) Recv() (*HelloRequest, error) {
+	m := new(HelloRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _Greeter_StreamServer_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(HelloRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GreeterServer).StreamServer(m, &greeterStreamServerServer{stream})
+}
+
+type Greeter_StreamServerServer interface {
+	Send(*HelloReply) error
+	grpc.ServerStream
+}
+
+type greeterStreamServerServer struct {
+	grpc.ServerStream
+}
+
+func (x *greeterStreamServerServer) Send(m *HelloReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Greeter_ServiceDesc is the grpc.ServiceDesc for Greeter service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -98,6 +225,17 @@ var Greeter_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Greeter_SayHello_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamSayHello",
+			Handler:       _Greeter_StreamSayHello_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "StreamServer",
+			Handler:       _Greeter_StreamServer_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "helloworld.proto",
 }
